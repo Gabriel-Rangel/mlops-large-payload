@@ -1,0 +1,8 @@
+# Suggested model tags — apply via MLflow client / Job de promoção
+owner: ml-platform
+domain: <customer-domain>
+criticality: medium  # low | medium | high
+sla: sync-online     # sync-online | async-batch
+payload_pattern: volume_reference
+data_classification: confidential
+validation_status: pending  # pending | valid | invalid  (tag policy do workspace de demo)

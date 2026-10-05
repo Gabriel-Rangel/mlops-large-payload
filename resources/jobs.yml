@@ -1,0 +1,255 @@
+resources:
+  jobs:
+    setup_governance:
+      name: "[${bundle.target}] mlops-lp · setup UC (DDL + observability)"
+      description: >
+        Cria tabelas de observabilidade, datasets de exemplo e valida
+        permissões mínimas do Volume de payloads.
+      tasks:
+        - task_key: setup_sql
+          notebook_task:
+            notebook_path: ../src/notebooks/01_setup_uc.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+          environment_key: serverless_env
+      environments:
+        - environment_key: serverless_env
+          spec:
+            environment_version: "4"
+      tags:
+        project: mlops-large-payload
+        stage: ${bundle.target}
+        purpose: governance-setup
+
+    train_register:
+      name: "[${bundle.target}] mlops-lp · train + register"
+      description: >
+        Treina um modelo demo, registra no Unity Catalog via MLflow e aponta
+        o alias Challenger para a nova versão.
+      tasks:
+        - task_key: train_register
+          notebook_task:
+            notebook_path: ../src/notebooks/02_train_register.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              model_name: ${var.model_name}
+              experiment_path: ${var.experiment_path}
+          environment_key: serverless_env
+      environments:
+        - environment_key: serverless_env
+          spec:
+            environment_version: "4"
+            dependencies:
+              - scikit-learn>=1.4.0
+              - mlflow>=2.14.0
+              - pandas>=2.0.0
+              - numpy>=1.26.0
+              - databricks-sdk>=0.36.0
+      permissions:
+        - level: CAN_MANAGE_RUN
+          group_name: ${var.ml_engineers_group}
+
+    evaluate_promote:
+      name: "[${bundle.target}] mlops-lp · evaluate + promote"
+      description: >
+        Gates de validação (métricas, schema/signature, smoke test).
+        Em sucesso, promove Challenger → Champion (ou para o próximo catálogo).
+      parameters:
+        - name: min_roc_auc
+          default: "0.70"
+        - name: promote_to_champion
+          default: "false"
+      tasks:
+        - task_key: evaluate_promote
+          notebook_task:
+            notebook_path: ../src/notebooks/03_evaluate_promote.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              model_name: ${var.model_name}
+              min_roc_auc: "{{job.parameters.min_roc_auc}}"
+              promote_to_champion: "{{job.parameters.promote_to_champion}}"
+          environment_key: serverless_env
+      environments:
+        - environment_key: serverless_env
+          spec:
+            environment_version: "4"
+            dependencies:
+              - scikit-learn>=1.4.0
+              - mlflow>=2.14.0
+              - pandas>=2.0.0
+              - numpy>=1.26.0
+      tags:
+        project: mlops-large-payload
+        stage: ${bundle.target}
+        purpose: evaluate-promote
+      permissions:
+        - level: CAN_MANAGE_RUN
+          group_name: ${var.ml_ops_group}
+
+    deploy_endpoint:
+      name: "[${bundle.target}] mlops-lp · deploy / update serving endpoint"
+      description: >
+        Cria ou atualiza o Model Serving endpoint apontando para o alias Champion.
+        Zero-downtime: update-config + poll de ready/config_update.
+      tasks:
+        - task_key: deploy_endpoint
+          notebook_task:
+            notebook_path: ../src/notebooks/04_deploy_endpoint.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              model_name: ${var.model_name}
+              endpoint_name: ${var.endpoint_name}
+              workload_size: ${var.serving_workload_size}
+              scale_to_zero: ${var.enable_scale_to_zero}
+              databricks_host: https://fevm-gabriel-caballeria-demo.cloud.databricks.com
+              volume_token_secret: "{{secrets/mlops-large-payload/databricks-token}}"
+          environment_key: serverless_env
+      environments:
+        - environment_key: serverless_env
+          spec:
+            environment_version: "4"
+            dependencies:
+              - mlflow>=2.14.0
+              - databricks-sdk>=0.36.0
+      tags:
+        project: mlops-large-payload
+        stage: ${bundle.target}
+        purpose: deploy-endpoint
+      permissions:
+        - level: CAN_MANAGE_RUN
+          group_name: ${var.ml_ops_group}
+
+    demo_invoke:
+      name: "[${bundle.target}] mlops-lp · demo invoke (payload by reference)"
+      description: >
+        Demonstra o padrão de produção: grava JSON ~16 MB no Volume,
+        chama o endpoint só com payload_uri + features escalares,
+        e registra metadados na tabela de observabilidade.
+      tasks:
+        - task_key: demo_invoke
+          notebook_task:
+            notebook_path: ../src/notebooks/05_demo_invoke.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              endpoint_name: ${var.endpoint_name}
+              payload_mb: "15"
+          environment_key: serverless_env
+      environments:
+        - environment_key: serverless_env
+          spec:
+            environment_version: "4"
+            dependencies:
+              - mlflow>=2.14.0
+              - databricks-sdk>=0.36.0
+              - pandas>=2.0.0
+              - numpy>=1.26.0
+      tags:
+        project: mlops-large-payload
+        stage: ${bundle.target}
+        purpose: demo-invoke
+
+    async_batch_score:
+      name: "[${bundle.target}] mlops-lp · async / batch score"
+      description: >
+        Consome async_inference_queue (PENDING), scoreia com @Champion e
+        grava resultado + observabilidade. Preferível quando 16 MB não exige
+        resposta síncrona online.
+      schedule:
+        quartz_cron_expression: "0 */15 * * * ?"
+        timezone_id: America/Sao_Paulo
+        pause_status: PAUSED
+      tasks:
+        - task_key: async_batch
+          notebook_task:
+            notebook_path: ../src/notebooks/06_async_batch.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              model_name: ${var.model_name}
+              batch_size: "50"
+          environment_key: serverless_env
+      environments:
+        - environment_key: serverless_env
+          spec:
+            environment_version: "4"
+            dependencies:
+              - mlflow>=2.14.0
+              - scikit-learn>=1.4.0
+              - pandas>=2.0.0
+              - numpy>=1.26.0
+              - joblib>=1.3.0
+              - databricks-sdk>=0.36.0
+      tags:
+        project: mlops-large-payload
+        stage: ${bundle.target}
+        purpose: async-batch
+
+    validate_approaches:
+      name: "[${bundle.target}] mlops-lp · validate approaches A+B"
+      description: >
+        Validação ponta a ponta: Serving (payload por referência) e App
+        assíncrona, com relatório pass/fail por tamanho de payload.
+      timeout_seconds: 5400
+      tasks:
+        - task_key: validate_approaches
+          notebook_task:
+            notebook_path: ../src/notebooks/07_validate_approaches.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              endpoint_name: ${var.endpoint_name}
+              app_url: https://large-payload-api-7474644345582688.aws.databricksapps.com
+              payload_sizes_mb: "0.01,2,15"
+              timeout_s: "600"
+          environment_key: serverless_env
+          timeout_seconds: 5400
+          max_retries: 0
+      environments:
+        - environment_key: serverless_env
+          spec:
+            environment_version: "4"
+            dependencies:
+              - mlflow>=2.14.0
+              - databricks-sdk>=0.36.0
+              - requests>=2.31.0
+              - pandas>=2.0.0
+      tags:
+        project: mlops-large-payload
+        stage: ${bundle.target}
+        purpose: validate-approaches
+
+    curl_15mb:
+      name: "[${bundle.target}] mlops-lp · curl 15MiB serving + app"
+      description: >
+        Um payload de ~15 MiB: Model Serving e App API chamados via curl.
+      timeout_seconds: 1800
+      tasks:
+        - task_key: curl_15mb
+          notebook_task:
+            notebook_path: ../src/notebooks/08_curl_15mb.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              endpoint_name: ${var.endpoint_name}
+              app_url: https://large-payload-api-7474644345582688.aws.databricksapps.com
+              payload_mb: "15"
+              timeout_s: "180"
+          environment_key: serverless_env
+          timeout_seconds: 1800
+          max_retries: 0
+      environments:
+        - environment_key: serverless_env
+          spec:
+            environment_version: "4"
+            dependencies:
+              - databricks-sdk>=0.36.0
+              - pandas>=2.0.0
+      tags:
+        project: mlops-large-payload
+        stage: ${bundle.target}
+        purpose: curl-15mb-demo

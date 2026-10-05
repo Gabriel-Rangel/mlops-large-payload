@@ -1,0 +1,75 @@
+# Databricks Asset Bundle — MLOps com payload grande (>1 MiB)
+# Docs: https://docs.databricks.com/dev-tools/bundles/
+#
+# Fluxo alvo:
+#   Git → CI → treino (dev) → registro UC → avaliação → promoção
+#   (aliases Champion/Challenger) → deploy endpoint → observabilidade
+#
+# Payloads ~16 MB: NÃO vão no request do endpoint nem na inference table.
+# São gravados em Volume UC; o endpoint recebe apenas payload_uri + features.
+
+bundle:
+  name: mlops-large-payload
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog por ambiente (dev / staging / prod)
+  schema:
+    description: Schema do projeto de ML
+    default: mlops_large_payload
+  model_name:
+    description: Nome do modelo registrado no UC
+    default: large_payload_scorer
+  endpoint_name:
+    description: Nome do Model Serving endpoint
+    default: large-payload-scorer
+  experiment_path:
+    description: Caminho do experimento MLflow no workspace
+  serving_workload_size:
+    description: Workload size do endpoint (Small | Medium | Large)
+    default: Small
+  enable_scale_to_zero:
+    description: Scale-to-zero no endpoint (true em non-prod)
+    default: "true"
+  warehouse_id:
+    description: SQL warehouse used by the Databricks App to write observability rows
+    default: bf9351ab7a73e322
+  # Substitua pelos grupos reais do account/workspace do cliente
+  ml_engineers_group:
+    description: Grupo com permissão de desenvolver e promover até staging
+    default: users
+  ml_ops_group:
+    description: Grupo com permissão de promover e operar produção
+    default: users
+
+targets:
+  dev:
+    default: true
+    mode: development
+    presets:
+      name_prefix: ""
+    variables:
+      catalog: gabriel_caballeria_demo_catalog
+      experiment_path: /Shared/mlops-large-payload-dev
+      endpoint_name: large-payload-scorer-dev
+      enable_scale_to_zero: "true"
+
+  staging:
+    mode: development
+    variables:
+      catalog: ml_staging
+      experiment_path: /Shared/mlops-large-payload/staging
+      endpoint_name: large-payload-scorer-staging
+      enable_scale_to_zero: "true"
+
+  prod:
+    mode: production
+    variables:
+      catalog: ml_prod
+      experiment_path: /Shared/mlops-large-payload/prod
+      endpoint_name: large-payload-scorer
+      enable_scale_to_zero: "false"
+      serving_workload_size: Small

@@ -1,0 +1,33 @@
+resources:
+  apps:
+    inference_api:
+      name: large-payload-api
+      description: >
+        Async FastAPI that accepts 15 scalars + a large JSON payload, writes the
+        JSON to a UC Volume, scores the Champion model in-process (no Model Serving),
+        and logs metadata to inference_observability.
+      source_code_path: ../src/app
+      resources:
+        - name: sql-warehouse
+          description: Warehouse used to INSERT observability rows
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: CAN_USE
+        - name: request-payloads
+          description: UC Volume for raw request JSON (~15 MiB)
+          uc_securable:
+            securable_type: VOLUME
+            securable_full_name: ${var.catalog}.${var.schema}.request_payloads
+            permission: WRITE_VOLUME
+        - name: inference-observability
+          description: Metadata-only inference log (no full JSON)
+          uc_securable:
+            securable_type: TABLE
+            securable_full_name: ${var.catalog}.${var.schema}.inference_observability
+            permission: MODIFY
+        - name: champion-model
+          description: UC-registered Champion model loaded in-process (not Model Serving)
+          uc_securable:
+            securable_type: FUNCTION
+            securable_full_name: ${var.catalog}.${var.schema}.${var.model_name}
+            permission: EXECUTE

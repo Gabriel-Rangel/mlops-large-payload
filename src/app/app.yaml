@@ -1,0 +1,19 @@
+command:
+  - python
+  - app.py
+
+env:
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  - name: DATABRICKS_CATALOG
+    value: gabriel_caballeria_demo_catalog
+  - name: DATABRICKS_SCHEMA
+    value: mlops_large_payload
+  - name: VOLUME_NAME
+    value: request_payloads
+  - name: MODEL_URI
+    value: models:/gabriel_caballeria_demo_catalog.mlops_large_payload.large_payload_scorer@Champion
+  - name: OBSERVABILITY_TABLE
+    value: gabriel_caballeria_demo_catalog.mlops_large_payload.inference_observability
+  - name: APP_NAME
+    value: large-payload-api

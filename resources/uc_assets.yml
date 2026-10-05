@@ -1,0 +1,31 @@
+resources:
+  schemas:
+    ml_schema:
+      name: ${var.schema}
+      catalog_name: ${var.catalog}
+      comment: >
+        Schema do projeto mlops-large-payload: modelos, volumes de payload,
+        tabelas de observabilidade e datasets de treino/avaliação.
+
+  volumes:
+    request_payloads:
+      catalog_name: ${var.catalog}
+      schema_name: ${var.schema}
+      name: request_payloads
+      volume_type: MANAGED
+      comment: >
+        Armazena JSONs grandes (~16 MB) referenciados por payload_uri.
+        O endpoint NÃO recebe o JSON completo — apenas o caminho/URI.
+      # Ajuste os principals para grupos/SPs reais antes do deploy em prod.
+      # grants:
+      #   - principal: ${var.ml_engineers_group}
+      #     privileges: [READ_VOLUME, WRITE_VOLUME]
+      #   - principal: serving-sp@example.com
+      #     privileges: [READ_VOLUME]
+
+    model_artifacts_aux:
+      catalog_name: ${var.catalog}
+      schema_name: ${var.schema}
+      name: model_artifacts_aux
+      volume_type: MANAGED
+      comment: Artefatos auxiliares (configs, samples) fora do MLflow artifact store.

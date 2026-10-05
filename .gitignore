@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Databricks / local secrets
+.databricks/
+.env
+.env.*
+!.env.example
+*.token
+*.pem
+.secrets/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Local artifacts
+tmp/
+*.log
+mlruns/
+.mlflow/
